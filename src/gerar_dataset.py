@@ -27,12 +27,12 @@ CONSUMO_BASE = {
     "Centro": 400.0,
 }
 
-CAPACIDADE_DISPONIVEL = {
-    "Norte": 380.0,
-    "Sul": 300.0,
-    "Leste": 230.0,
-    "Oeste": 320.0,
-    "Centro": 430.0,
+CAPACIDADE_DISPONIVEL = {  # 2x a base, pra o pico normal (1.35x) ficar bem abaixo da capacidade
+    "Norte": 640.0,
+    "Sul": 520.0,
+    "Leste": 420.0,
+    "Oeste": 560.0,
+    "Centro": 800.0,
 }
 
 PRIORIDADE = { # 1 = baixa, 2 = media, 3 = alta
@@ -47,6 +47,19 @@ TARIFA_NORMAL = 0.65  # custo por unidade de consumo em horario normal
 TARIFA_PICO = 1.10  # custo por unidade de consumo em horario de pico
 
 HORAS_DE_PICO = set(range(6, 9)) | set(range(18, 22))  # 6h-8h e 18h-21h
+
+# evento critico injetado de proposito: simula uma falha/manutencao
+# que derruba a capacidade disponivel de uma regiao por um periodo
+# continuo, pra existir um trecho bem definido e pior que o resto.
+EVENTO_REGIAO = "Sul"
+EVENTO_INICIO_HORA = 100  # indice da hora onde o evento comeca (dia 5)
+EVENTO_DURACAO_HORAS = 30  # quase um dia e meio de capacidade reduzida
+EVENTO_FATOR_CAPACIDADE = 0.5  # capacidade cai pra metade durante o evento
+
+
+def esta_no_evento_critico(regiao: str, indice_hora: int) -> bool:
+    fim_do_evento = EVENTO_INICIO_HORA + EVENTO_DURACAO_HORAS
+    return regiao == EVENTO_REGIAO and EVENTO_INICIO_HORA <= indice_hora < fim_do_evento
 
 
 def esta_em_horario_de_pico(hora: int) -> bool:
@@ -78,12 +91,17 @@ def gerar_linhas() -> list[dict]:
         for regiao in REGIOES:  # uma leitura por regiao em cada hora
             consumo = gerar_consumo(regiao, timestamp.hour)
             custo = gerar_custo(consumo, timestamp.hour)
+
+            capacidade = CAPACIDADE_DISPONIVEL[regiao]
+            if esta_no_evento_critico(regiao, indice_hora):
+                capacidade = round(capacidade * EVENTO_FATOR_CAPACIDADE, 2)
+
             linhas.append(
                 {
                     "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                     "regiao": regiao,
                     "consumo": consumo,
-                    "capacidade_disponivel": CAPACIDADE_DISPONIVEL[regiao],
+                    "capacidade_disponivel": capacidade,
                     "prioridade": PRIORIDADE[regiao],
                     "custo": custo,
                 }
