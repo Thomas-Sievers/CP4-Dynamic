@@ -155,4 +155,26 @@ class Instance:
         raise ValueError(f"Unknown site node_id: {node_id}")
 
 
+@dataclass(frozen=True, slots=True)
+class Solution:
+    """A service plan: the shared return shape for Greedy (Step 3) and DP (Step 4).
+
+    Storing ``selected_sites`` already in pi order lets Part E draw the
+    service sequence directly, and lets Part D compare Greedy and DP by
+    just diffing two ``Solution`` values under the same objective.
+    """
+
+    selected_sites: tuple[int, ...]  # site node ids, in pi (visiting) order
+    total_benefit: int  # sum of effective_benefit over selected_sites
+    total_load: int  # sum of load over selected_sites; must be <= capacity
+    route_length: int  # L(S): depot -> selected_sites in pi order, no return
+    objective_value: int  # J(S) = total_benefit - lambda_price * route_length
+
+    def __post_init__(self) -> None:
+        if self.total_load < 0:
+            raise ValueError(f"Solution total_load must be non-negative, got {self.total_load}.")
+        if self.route_length < 0:
+            raise ValueError(f"Solution route_length must be non-negative, got {self.route_length}.")
+
+
 # ===== end Question 1 =====
