@@ -1,12 +1,13 @@
-"""Question 1: figures for Part E (Section 5.2 figure conventions).
+"""Question 1: figures for Part E and Part F (Section 5.2 figure conventions).
 
-Three plotting functions, each returning a ``matplotlib.figure.Figure``:
+Four plotting functions, each returning a ``matplotlib.figure.Figure``:
 
-1. ``plot_instance_graph`` -- depot, sites, roads, weights, blocked roads (Figure 1).
-2. ``plot_solution`` -- served/not-served sites and the service route (Figure 2).
-3. ``plot_dp_table`` -- the DP value table, reconstruction path, decision cells (Figure 3).
+1. ``plot_instance_graph`` -- depot, sites, roads, weights, blocked roads (Figure 1, Part E).
+2. ``plot_solution`` -- served/not-served sites and the service route (Figure 2, Part E).
+3. ``plot_dp_table`` -- the DP value table, reconstruction path, decision cells (Figure 3, Part E).
+4. ``plot_time_growth`` -- measured time vs. N against an O(2^N) reference (Figure 4, Part F).
 
-Running ``python -m src.plots`` regenerates the three PNGs used in the
+Running ``python -m src.plots`` regenerates all four PNGs used in the
 README/notebook into ``figures/questao1/``, from the real seed-1 dataset.
 Library code here never calls ``plt.show()``; the caller decides whether
 to display or save (Section 5.2, "code returns data").
@@ -260,6 +261,55 @@ def plot_dp_table(
     return fig
 
 
+def plot_time_growth(
+    n_values: list[int],
+    dp_times: list[float],
+    greedy_times: list[float] | None = None,
+    ax: plt.Axes | None = None,
+) -> plt.Figure:
+    """Part F supplementary figure: measured time vs. N, log scale, vs. an O(2^N) reference.
+
+    Parameters
+    ----------
+    n_values : list[int]
+        Candidate-set sizes that were swept (x axis).
+    dp_times : list[float]
+        Average ``solve_dp`` seconds at each entry of ``n_values``.
+    greedy_times : list[float], optional
+        Average ``solve_greedy`` seconds at each entry of ``n_values``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw into; a new figure is created if omitted.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=FIGSIZE)
+    else:
+        fig = ax.figure
+
+    ax.plot(n_values, dp_times, marker="o", color="tab:blue", label="DP (measured)")
+    if greedy_times is not None:
+        ax.plot(n_values, greedy_times, marker="s", color="tab:green", label="Greedy (measured)")
+
+    # A conceptual O(2^N) reference, scaled to match the DP curve at the
+    # smallest N so only the *growth rate* is compared (Lesson 12, Cell
+    # 07) -- this is a plotted formula, not a real brute-force run (2^20
+    # subsets would dwarf the polynomial algorithms it exists to contrast).
+    first_dp_time = dp_times[0] if dp_times and dp_times[0] > 0 else 1e-6
+    scale = first_dp_time / (2**n_values[0])
+    reference = [scale * (2**n) for n in n_values]
+    ax.plot(n_values, reference, linestyle="--", color="0.4", label="O(2^N) reference (scaled)")
+
+    ax.set_yscale("log")
+    ax.set_title("Figure 4 - Time growth: DP/Greedy (measured) vs. O(2^N) reference")
+    ax.set_xlabel("N (candidate sites)")
+    ax.set_ylabel("average time per call (s, log scale)")
+    ax.legend(loc="best", fontsize=8, framealpha=0.9)
+    return fig
+
+
 def _demo_subset_for_figure_3(pi_order: list[int], n_sites: int = 4) -> list[int]:
     """First n_sites of pi_order: few enough real sites for a fully-annotated Figure 3."""
     return pi_order[:n_sites]
@@ -328,6 +378,40 @@ def generate_all_figures(output_dir: str | Path) -> None:
     plt.close(fig3)
 
 
+def generate_complexity_figure(output_dir: str | Path) -> None:
+    """Measure Greedy/DP time growth on the real dataset and save Figure 4 (Part F).
+
+    Parameters
+    ----------
+    output_dir : str | Path
+        Directory to save the PNG into (``figures/questao1``).
+    """
+    from src.data_generator import SEED, generate_instance
+    from src.measurements import sweep_dp_time_by_n, sweep_greedy_time_by_n
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    instance = generate_instance(seed=SEED)
+    graph = instance.graph()
+    depot_id = instance.depot.node_id
+    distance_from_depot, parent = dijkstra(graph, depot_id)
+    pi_order = build_order(distance_from_depot, parent, depot_id)
+    distance = distance_matrix(graph, [depot_id, *pi_order])
+
+    dp_points = sweep_dp_time_by_n(instance, pi_order, distance)
+    greedy_points = sweep_greedy_time_by_n(instance, pi_order, distance)
+    n_values = [n for n, _ in dp_points]
+    dp_times = [t for _, t in dp_points]
+    greedy_times = [t for _, t in greedy_points]
+
+    fig4 = plot_time_growth(n_values, dp_times, greedy_times)
+    fig4.savefig(output_dir / "figure4_complexity_growth.png", dpi=150, bbox_inches="tight")
+    plt.close(fig4)
+
+
 if __name__ == "__main__":
     _repo_root = Path(__file__).resolve().parent.parent
-    generate_all_figures(_repo_root / "figures" / "questao1")
+    _output_dir = _repo_root / "figures" / "questao1"
+    generate_all_figures(_output_dir)
+    generate_complexity_figure(_output_dir)

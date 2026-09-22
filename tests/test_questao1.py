@@ -17,7 +17,15 @@ from src.dynamic_programming import UNREACHABLE, solve_dp
 from src.estruturas import Site
 from src.greedy import solve_greedy
 from src.objective import build_order
-from src.plots import generate_all_figures, plot_dp_table, plot_instance_graph, plot_solution
+from src.measurements import measure_time, peak_memory_bytes, sweep_dp_time_by_n
+from src.plots import (
+    generate_all_figures,
+    generate_complexity_figure,
+    plot_dp_table,
+    plot_instance_graph,
+    plot_solution,
+    plot_time_growth,
+)
 from src.shortest_paths import dijkstra, distance_matrix, reconstruct_path
 
 
@@ -678,3 +686,53 @@ def test_generate_all_figures_writes_the_three_pngs(tmp_path):
     generate_all_figures(tmp_path)
     for filename in ("figure1_graph.png", "figure2_solution.png", "figure3_dp_evolution.png"):
         assert (tmp_path / filename).stat().st_size > 0
+
+
+def test_plot_time_growth_returns_a_figure():
+    # Figure 4 (Part F) must render without error from a small hand-made sweep.
+    fig = plot_time_growth(n_values=[2, 3, 4], dp_times=[0.001, 0.002, 0.004], greedy_times=[0.0001, 0.0002, 0.0003])
+    assert isinstance(fig, plt.Figure)
+    plt.close(fig)
+
+
+def test_generate_complexity_figure_writes_the_png(tmp_path):
+    # The Part F supplementary figure, generated from real measured times.
+    generate_complexity_figure(tmp_path)
+    assert (tmp_path / "figure4_complexity_growth.png").stat().st_size > 0
+
+
+# ----- Measurement helpers (Part F, Lesson 11 Cells 13-14) -----
+
+def test_measure_time_returns_a_non_negative_average():
+    # A trivial function timed over several repetitions must give a non-negative average.
+    avg_seconds = measure_time(lambda x: x + 1, data=(1,), repetitions=3)
+    assert avg_seconds >= 0
+
+
+def test_measure_time_non_positive_repetitions_raises_value_error():
+    # repetitions must be positive to average over anything.
+    with pytest.raises(ValueError):
+        measure_time(lambda x: x, data=(1,), repetitions=0)
+
+
+def test_peak_memory_bytes_is_positive_for_an_allocating_function():
+    # Building a real list must show up as positive traced memory.
+    def allocate(n):
+        return [0] * n
+
+    assert peak_memory_bytes(allocate, data=(10_000,)) > 0
+
+
+def test_sweep_dp_time_by_n_covers_every_size_and_stays_non_negative():
+    # The sweep must return one (n, avg_time) pair per candidate-set size, from 2 up to N.
+    instance = generate_instance(seed=data_generator.SEED)
+    graph = instance.graph()
+    depot_id = instance.depot.node_id
+    distance_from_depot, parent = dijkstra(graph, depot_id)
+    pi_order = build_order(distance_from_depot, parent, depot_id)
+    distance = distance_matrix(graph, [depot_id, *pi_order])
+
+    results = sweep_dp_time_by_n(instance, pi_order, distance, repetitions=1)
+
+    assert [n for n, _ in results] == list(range(2, len(pi_order) + 1))
+    assert all(avg_seconds >= 0 for _, avg_seconds in results)
