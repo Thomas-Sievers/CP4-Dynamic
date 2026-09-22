@@ -1,7 +1,6 @@
 """
 Busca o intervalo continuo de maior criticidade acumulada por
-divide-and-conquer (Parte C da Questao 2) -- o classico "subarray de
-soma maxima" adaptado pra usar a criticidade em vez da soma pura.
+divide-and-conquer (Parte C da Questao 2).
 """
 
 from src.criticidade import calcular_criticidade

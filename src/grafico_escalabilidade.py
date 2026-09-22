@@ -39,6 +39,7 @@ INTERPRETACAO = (
 
 
 def carregar_resultados(caminho_csv: str = "data/escalabilidade.csv") -> list[dict]:
+    """Le o csv gerado por src/experimento_escalabilidade.py."""
     with open(caminho_csv, newline="", encoding="utf-8") as arquivo:
         leitor = csv.DictReader(arquivo)
         return [
@@ -52,6 +53,7 @@ def carregar_resultados(caminho_csv: str = "data/escalabilidade.csv") -> list[di
 
 
 def gerar_figura(caminho_saida: str = "figures/questao2/escalabilidade.png") -> None:
+    """Plota tempo x tamanho de entrada (log-log) pros dois algoritmos e salva em caminho_saida."""
     resultados = carregar_resultados()
     tamanhos = [linha["n"] for linha in resultados]
     tempos_fb = [linha["tempo_forca_bruta_s"] for linha in resultados]

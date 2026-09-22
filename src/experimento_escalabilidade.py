@@ -41,6 +41,7 @@ def gerar_leituras_aleatorias(n: int) -> list[dict]:
 
 
 def medir_tempo_medio(funcao, leituras: list[dict]) -> float:
+    """Roda 'funcao' REPETICOES vezes e devolve a media do tempo, em segundos."""
     tempos = []
     for _ in range(REPETICOES):
         inicio = time.perf_counter()
@@ -81,6 +82,7 @@ def operacoes_divide_conquer(n: int) -> int:
 
 
 def rodar_experimento() -> list[dict]:
+    """Roda forca bruta e divide-and-conquer pra cada tamanho em TAMANHOS e junta os resultados."""
     random.seed(SEED)
     resultados = []
 
@@ -110,6 +112,7 @@ def rodar_experimento() -> list[dict]:
 
 
 def salvar_resultados(resultados: list[dict], caminho_csv: str = "data/escalabilidade.csv") -> None:
+    """Escreve os resultados de rodar_experimento() num csv, uma linha por tamanho de entrada."""
     campos = list(resultados[0].keys())
     with open(caminho_csv, "w", newline="", encoding="utf-8") as arquivo:
         escritor = csv.DictWriter(arquivo, fieldnames=campos)

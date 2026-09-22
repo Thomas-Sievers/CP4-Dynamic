@@ -1,6 +1,5 @@
 """
 Estruturas de dados da Questao 2 (gestao de consumo de energia).
-
 """
 import csv
 import heapq

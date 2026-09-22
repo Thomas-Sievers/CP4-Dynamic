@@ -1,6 +1,5 @@
 """
 Cria o dataset sintetico da Questao 2 (gestao de consumo de energia).
-
 """
 
 import csv
@@ -69,8 +68,10 @@ def esta_em_horario_de_pico(hora: int) -> bool:
 def gerar_consumo(regiao: str, hora: int) -> float:
     """
     Consumo = base da regiao + acrescimo em horario de pico + ruido
-    aleatorio. De vez em quando ultrapassa a capacidade disponivel de
-    proposito, para a funcao de criticidade ter excessos para penalizar.
+    aleatorio. A capacidade disponivel fica bem acima do pico normal
+    (ver CAPACIDADE_DISPONIVEL), entao esse consumo quase nunca passa
+    dela sozinho -- o excesso de verdade vem do evento critico
+    injetado (esta_no_evento_critico), nao do ruido aleatorio.
     """
     base = CONSUMO_BASE[regiao]  # consumo medio da regiao
     acrescimo_pico = base * 0.35 if esta_em_horario_de_pico(hora) else 0.0  # 35% a mais no pico
@@ -110,7 +111,7 @@ def gerar_linhas() -> list[dict]:
 
 
 def main() -> None:
-    random.seed(SEED)  # fixa a seed antes de gerar, para odataset ser sempre igual
+    random.seed(SEED)  # fixa a seed antes de gerar, para o dataset ser sempre igual
     linhas: list[dict] = gerar_linhas()
 
     caminho_saida: str = "data/problema2.csv"

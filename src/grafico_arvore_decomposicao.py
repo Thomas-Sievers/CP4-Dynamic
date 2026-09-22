@@ -125,6 +125,7 @@ def _desenhar_no(eixo, no: No, leituras: list[dict], caminho_vencedor: set[int])
 
 
 def gerar_figura(caminho_saida: str = "figures/questao2/arvore_decomposicao.png") -> None:
+    """Monta a arvore em cima do intervalo critico real e salva a figura em caminho_saida."""
     leituras = carregar_leituras()
     trecho = leituras[INDICE_INICIO_REAL : INDICE_FIM_REAL + 1]
     scores = [calcular_criticidade(leitura) for leitura in trecho]
