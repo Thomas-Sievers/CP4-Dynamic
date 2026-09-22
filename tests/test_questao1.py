@@ -8,6 +8,7 @@ import pytest
 from src import data_generator, dynamic_programming, estruturas, greedy, objective
 from src.data_generator import generate_instance, write_instance
 from src.data_loader import load_instance
+from src.dynamic_programming import UNREACHABLE, solve_dp
 from src.estruturas import Site
 from src.greedy import solve_greedy
 from src.objective import build_order
@@ -347,7 +348,7 @@ def test_marginal_gain_with_a_successor_uses_the_detour_formula():
 
 # ----- Greedy solver (Decision D12) -----
 
-def _small_greedy_instance() -> estruturas.Instance:
+def _small_instance() -> estruturas.Instance:
     """Depot with 2 cheap, high-benefit sites (1, 2) and 1 far, low-benefit site (3)."""
     depot = estruturas.Depot(node_id=0, name="Distribution Center", x=0, y=0)
     sites = (
@@ -375,7 +376,7 @@ def _small_greedy_instance() -> estruturas.Instance:
     return estruturas.Instance(depot=depot, sites=sites, edges=edges)
 
 
-def _greedy_inputs(instance: estruturas.Instance):
+def _small_instance_inputs(instance: estruturas.Instance):
     """Shared plumbing: graph, pi order and full distance matrix for the small instance."""
     graph = instance.graph()
     distance_from_depot, parent = dijkstra(graph, instance.depot.node_id)
@@ -387,8 +388,8 @@ def _greedy_inputs(instance: estruturas.Instance):
 def test_solve_greedy_picks_the_two_densest_sites_and_stops():
     # Hand-traced: site 1 (score 18) beats site 2 (score 17) first; site 2 is then
     # cheap via site 1; site 3 never has positive marginal gain, so it is skipped.
-    instance = _small_greedy_instance()
-    pi_order, distance = _greedy_inputs(instance)
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
 
     solution = solve_greedy(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
 
@@ -401,8 +402,8 @@ def test_solve_greedy_picks_the_two_densest_sites_and_stops():
 
 def test_solve_greedy_zero_capacity_selects_nothing():
     # With no capacity, every candidate is unaffordable, so the plan is empty and J = 0.
-    instance = _small_greedy_instance()
-    pi_order, distance = _greedy_inputs(instance)
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
     solution = solve_greedy(instance, capacity=0, pi_order=pi_order, distance=distance, lambda_price=1)
     assert solution.selected_sites == ()
     assert solution.objective_value == 0
@@ -410,16 +411,16 @@ def test_solve_greedy_zero_capacity_selects_nothing():
 
 def test_solve_greedy_negative_capacity_raises_value_error():
     # Negative capacity is a malformed input (Section 5.1).
-    instance = _small_greedy_instance()
-    pi_order, distance = _greedy_inputs(instance)
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
     with pytest.raises(ValueError):
         solve_greedy(instance, capacity=-1, pi_order=pi_order, distance=distance)
 
 
 def test_solve_greedy_non_positive_lambda_raises_value_error():
     # D11: lambda must be a positive integer.
-    instance = _small_greedy_instance()
-    pi_order, distance = _greedy_inputs(instance)
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
     with pytest.raises(ValueError):
         solve_greedy(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=0)
 
@@ -429,3 +430,197 @@ def test_insert_in_pi_order_places_candidate_in_the_middle():
     selected = [1, 3]
     greedy._insert_in_pi_order(selected, 2, {1: 0, 2: 1, 3: 2})
     assert selected == [1, 2, 3]
+
+
+# ----- DP solver (Section 4 / Part C) -----
+
+def test_solve_dp_matches_the_hand_computed_table_and_optimum():
+    # Same instance and lambda as the greedy test above; every dp cell below
+    # is hand-traced through the Section 4 recurrence (see the comments).
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)  # pi_order == [1, 2, 3]
+
+    solution, dp = solve_dp(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    # dp rows are indexed by position in pi_order: 0 -> site 1, 1 -> site 2, 2 -> site 3.
+    assert dp[0][5] == 90  # site 1 alone: 100 - 1 * d(0,1) = 100 - 10
+    assert dp[1][5] == 85  # site 2 alone: 100 - 1 * d(0,2) = 100 - 15
+    assert dp[1][10] == 185  # site 1 then site 2: 90 + 100 - 1 * d(1,2) = 90 + 100 - 5
+    assert dp[2][1] == -14  # site 3 alone: 1 - 1 * d(0,3) = 1 - 15
+    assert dp[2][6] == 86  # site 1 then site 3: 90 + 1 - 1 * d(1,3) = 90 + 1 - 5
+    assert dp[0][0] == UNREACHABLE  # no route ends at site 1 carrying zero load
+
+    assert solution.selected_sites == (1, 2)
+    assert solution.total_benefit == 200
+    assert solution.total_load == 10
+    assert solution.route_length == 15
+    assert solution.objective_value == 185
+
+
+def test_solve_dp_floors_to_the_empty_set_when_every_option_is_negative():
+    # Only site 3 fits capacity 1, and it alone has a negative J; the DP must
+    # prefer serving nobody (J = 0) over taking a losing deal (Section 4's max(0, ...)).
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+
+    solution, _ = solve_dp(instance, capacity=1, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    assert solution.selected_sites == ()
+    assert solution.objective_value == 0
+
+
+def test_solve_dp_zero_capacity_selects_nothing():
+    # No site fits zero capacity, so every dp cell stays UNREACHABLE.
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+
+    solution, dp = solve_dp(instance, capacity=0, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    assert solution.selected_sites == ()
+    assert all(value == UNREACHABLE for row in dp for value in row)
+
+
+def test_solve_dp_negative_capacity_raises_value_error():
+    # Negative capacity is a malformed input (Section 5.1).
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+    with pytest.raises(ValueError):
+        solve_dp(instance, capacity=-1, pi_order=pi_order, distance=distance)
+
+
+def test_solve_dp_non_positive_lambda_raises_value_error():
+    # D11: lambda must be a positive integer.
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+    with pytest.raises(ValueError):
+        solve_dp(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=0)
+
+
+def test_solve_dp_never_exceeds_capacity_on_the_real_dataset():
+    # Integration check on the full seed-1 instance: DP must respect capacity
+    # and reach at least as good a J(S) as Greedy does on the same inputs.
+    instance = generate_instance(seed=data_generator.SEED)
+    graph = instance.graph()
+    depot_id = instance.depot.node_id
+    distance_from_depot, parent = dijkstra(graph, depot_id)
+    pi_order = build_order(distance_from_depot, parent, depot_id)
+    distance = distance_matrix(graph, [depot_id, *pi_order])
+    capacity = int(0.35 * sum(site.load for site in instance.sites))
+
+    dp_solution, dp = solve_dp(instance, capacity=capacity, pi_order=pi_order, distance=distance)
+    greedy_solution = solve_greedy(instance, capacity=capacity, pi_order=pi_order, distance=distance)
+
+    assert dp_solution.total_load <= capacity
+    assert dp_solution.objective_value >= greedy_solution.objective_value
+    assert len(dp) == len(pi_order)
+    assert all(len(row) == capacity + 1 for row in dp)
+
+
+# ----- Greedy x DP comparison and counterexample (Decision D7, Part D) -----
+#
+# Part D asks for three cases: Greedy optimal, Greedy not optimal (a
+# counterexample), and DP superior. All three are exercised below, always
+# by running solve_greedy and solve_dp on the exact same instance, pi_order,
+# distance matrix and lambda_price -- so any gap comes only from the
+# strategy, not from a different objective (Decision D4).
+
+def test_case_1_greedy_matches_dp_when_capacity_is_not_the_bottleneck():
+    # Case 1 (Greedy optimal): on the Step 3/4 fixture, taking the two best
+    # sites happens to also be the only way to nearly fill the capacity, so
+    # the myopic and the optimal choice coincide.
+    instance = _small_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+
+    greedy_solution = solve_greedy(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+    dp_solution, _ = solve_dp(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    assert greedy_solution.selected_sites == dp_solution.selected_sites == (1, 2)
+    assert greedy_solution.objective_value == dp_solution.objective_value == 185
+
+
+def _counterexample_instance() -> estruturas.Instance:
+    """Hand-built instance where the D12 density rule wastes leftover capacity.
+
+    Depot plus 3 sites, all pairwise distances equal to 1 (so route cost
+    only ever adds +1 per hop, isolating the knapsack effect). Capacity 10:
+
+    * Site 1: load 6, benefit 60 -> density 10.0 (the single best density).
+    * Site 2: load 5, benefit 45 -> density 9.0.
+    * Site 3: load 5, benefit 45 -> density 9.0.
+
+    Greedy takes site 1 first (highest density); the remaining capacity (4)
+    then fits neither site 2 nor site 3, so Greedy stops with only site 1.
+    Skipping site 1 entirely and taking {site 2, site 3} instead uses all
+    10 units of capacity for a strictly higher total: this is exactly D12's
+    documented weakness ("the capacity left over after the best-density
+    item may be wasted").
+    """
+    depot = estruturas.Depot(node_id=0, name="Distribution Center", x=0, y=0)
+    sites = (
+        estruturas.Site(
+            node_id=1, name="Site 01", x=0, y=0, people_affected=100, priority=1,
+            water=6, medicine=0, food=0, hygiene_kits=0, blankets=0, expected_benefit=60,
+        ),
+        estruturas.Site(
+            node_id=2, name="Site 02", x=0, y=0, people_affected=100, priority=1,
+            water=5, medicine=0, food=0, hygiene_kits=0, blankets=0, expected_benefit=45,
+        ),
+        estruturas.Site(
+            node_id=3, name="Site 03", x=0, y=0, people_affected=100, priority=1,
+            water=5, medicine=0, food=0, hygiene_kits=0, blankets=0, expected_benefit=45,
+        ),
+    )
+    edges = tuple(
+        estruturas.Edge(node_a=a, node_b=b, distance=1, available=True)
+        for a, b in ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
+    )
+    return estruturas.Instance(depot=depot, sites=sites, edges=edges)
+
+
+def test_case_2_counterexample_shows_greedy_is_not_optimal():
+    # Case 2 (Greedy not optimal): exact numbers hand-computed in the
+    # docstring of _counterexample_instance -- Greedy: {1}, J=59.
+    instance = _counterexample_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+
+    greedy_solution = solve_greedy(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    assert greedy_solution.selected_sites == (1,)
+    assert greedy_solution.total_benefit == 60
+    assert greedy_solution.total_load == 6
+    assert greedy_solution.objective_value == 59
+
+
+def test_case_3_dp_is_superior_on_the_counterexample():
+    # Case 3 (DP superior): DP finds {2, 3}, J=88 -- strictly more than
+    # Greedy's 59 on the very same instance, objective and inputs.
+    instance = _counterexample_instance()
+    pi_order, distance = _small_instance_inputs(instance)
+
+    greedy_solution = solve_greedy(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+    dp_solution, _ = solve_dp(instance, capacity=10, pi_order=pi_order, distance=distance, lambda_price=1)
+
+    assert dp_solution.selected_sites == (2, 3)
+    assert dp_solution.total_benefit == 90
+    assert dp_solution.total_load == 10
+    assert dp_solution.objective_value == 88
+    assert dp_solution.objective_value > greedy_solution.objective_value
+
+
+def test_dp_strictly_outperforms_greedy_on_the_real_seed_1_dataset():
+    # Part D also asks to report the real dataset honestly, not just the
+    # hand-built counterexample: on SEED=1, DP beats Greedy too (11685 vs
+    # 8887 at the default 35% capacity), so the gap is not an artifact of
+    # a contrived instance.
+    instance = generate_instance(seed=data_generator.SEED)
+    graph = instance.graph()
+    depot_id = instance.depot.node_id
+    distance_from_depot, parent = dijkstra(graph, depot_id)
+    pi_order = build_order(distance_from_depot, parent, depot_id)
+    distance = distance_matrix(graph, [depot_id, *pi_order])
+    capacity = int(0.35 * sum(site.load for site in instance.sites))
+
+    dp_solution, _ = solve_dp(instance, capacity=capacity, pi_order=pi_order, distance=distance)
+    greedy_solution = solve_greedy(instance, capacity=capacity, pi_order=pi_order, distance=distance)
+
+    assert dp_solution.objective_value > greedy_solution.objective_value
