@@ -86,6 +86,28 @@ def test_site_load_and_effective_benefit_formulas():
     assert site.effective_benefit == 1200
 
 
+def test_instance_site_by_id_unknown_id_raises_value_error():
+    # site_by_id must reject a node_id that is not one of the instance's sites.
+    instance = generate_instance(seed=1)
+    with pytest.raises(ValueError):
+        instance.site_by_id(9999)
+
+
+def test_solution_negative_total_load_raises_value_error():
+    # Solution guards its own invariants, same as Site and Edge (Section 5.1).
+    with pytest.raises(ValueError):
+        estruturas.Solution(
+            selected_sites=(1,), total_benefit=10, total_load=-1, route_length=0, objective_value=10
+        )
+
+
+def test_solution_negative_route_length_raises_value_error():
+    with pytest.raises(ValueError):
+        estruturas.Solution(
+            selected_sites=(1,), total_benefit=10, total_load=5, route_length=-1, objective_value=10
+        )
+
+
 # ----- Loader (Section 9.2) -----
 
 NODE_HEADER = (

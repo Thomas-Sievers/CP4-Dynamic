@@ -310,12 +310,12 @@ def plot_time_growth(
     return fig
 
 
-def _demo_subset_for_figure_3(pi_order: list[int], n_sites: int = 4) -> list[int]:
+def demo_subset_for_figure_3(pi_order: list[int], n_sites: int = 4) -> list[int]:
     """First n_sites of pi_order: few enough real sites for a fully-annotated Figure 3."""
     return pi_order[:n_sites]
 
 
-def _demo_capacity_for_figure_3(instance: Instance, demo_sites: list[int], fraction: float = 0.5) -> int:
+def demo_capacity_for_figure_3(instance: Instance, demo_sites: list[int], fraction: float = 0.5) -> int:
     """A capacity for the demo sites that keeps the table within _MAX_ANNOTATED_CELLS.
 
     Using the real per-site loads (not invented numbers) at a smaller
@@ -368,8 +368,8 @@ def generate_all_figures(output_dir: str | Path) -> None:
     fig2.savefig(output_dir / "figure2_solution.png", dpi=150, bbox_inches="tight")
     plt.close(fig2)
 
-    demo_sites = _demo_subset_for_figure_3(pi_order)
-    demo_capacity = _demo_capacity_for_figure_3(instance, demo_sites)
+    demo_sites = demo_subset_for_figure_3(pi_order)
+    demo_capacity = demo_capacity_for_figure_3(instance, demo_sites)
     demo_solution, demo_dp = solve_dp(
         instance, capacity=demo_capacity, pi_order=demo_sites, distance=distance, lambda_price=LAMBDA_DISTANCE_PRICE
     )
