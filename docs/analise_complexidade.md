@@ -1,3 +1,9 @@
+# Complexity Analysis
+
+## Question 1
+
+_TODO_
+
 ## Questão 2 — Gestão de consumo de energia
 
 Os dois algoritmos (`src/brute_force.py` e `src/divide_conquer.py`) resolvem o
