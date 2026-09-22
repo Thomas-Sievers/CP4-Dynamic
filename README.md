@@ -1,12 +1,12 @@
 # CP4-Dynamic
 
-Checkpoint 4 — Graphs, Greedy strategies and Dynamic Programming applied to two real-world
-problems: emergency logistics after climate events (Question 1) and energy consumption
-management (Question 2).
+Checkpoint 4 — Grafos, estratégias Greedy e Programação Dinâmica aplicadas a dois problemas
+reais: logística emergencial após eventos climáticos (Questão 1) e gestão de consumo de energia
+(Questão 2).
 
-## Team
+## Equipe
 
-| Name | RM |
+| Nome | RM |
 |---|---|
 | Thomas Sievers | 563566 |
 | Marco Aurélio | 563827 |
@@ -14,180 +14,191 @@ management (Question 2).
 | Matheus Vasques | 563309 |
 | Bernardo Hanashiro | 565266 |
 
-## Reproducibility
+## Reprodutibilidade
 
-`SEED = 1`. Developed and tested with Python 3.12 (random-number streams are only guaranteed
-reproducible on the same Python version).
+`SEED = 1`. Desenvolvido e testado com Python 3.12 (as sequências de números aleatórios só têm
+reprodutibilidade garantida na mesma versão do Python).
 
-# Question 1 — Emergency Logistics
+# Questão 1 — Logística Emergencial
 
-### 1 Problem
+### 1 Problema
 
-A civil-defense team runs a single distribution center with limited supplies (water, medicine,
-food, hygiene kits, blankets) and one vehicle to serve up to 20 affected service points. Each
-point has an affected population, a priority level, a minimum demand per resource, an expected
-benefit, and roads to other points that may be unavailable (blocked). The graph is not fully
-connected, and some roads are declared unavailable. Given a vehicle load capacity, the goal is to
-choose which points to serve — and in what order — to maximize total benefit, using two
-different strategies (Greedy and Dynamic Programming) and comparing them honestly, including a
-case where Greedy is *not* optimal.
+Uma equipe de defesa civil opera um único centro de distribuição com suprimentos limitados
+(água, remédio, alimento, kits de higiene, cobertores) e um veículo para atender até 20 pontos
+de atendimento afetados. Cada ponto tem uma população afetada, um nível de prioridade, uma
+demanda mínima por recurso, um benefício esperado, e estradas até outros pontos que podem estar
+indisponíveis (bloqueadas). O grafo não é totalmente conectado, e algumas estradas são declaradas
+indisponíveis. Dada a capacidade de carga do veículo, o objetivo é escolher quais pontos atender
+— e em que ordem — para maximizar o benefício total, usando duas estratégias diferentes (Greedy
+e Programação Dinâmica) e comparando-as honestamente, incluindo um caso em que o Greedy *não* é
+ótimo.
 
-### 2 Adopted model
+### 2 Modelo adotado
 
-The full model and every trade-off are recorded as a decision log in `claude/SPEC.md` (Section
-3, decisions D1–D15); the short version:
+O modelo completo e cada trade-off estão registrados como um log de decisões em
+`claude/SPEC.md` (Seção 3, decisões D1–D15); a versão resumida:
 
-- **Graph**: 1 depot (node 0) + 20 candidate sites, roads with an integer distance, some marked
-  unavailable. Distances between any two nodes are shortest-path distances over *available*
-  roads only, computed by our own Dijkstra (D6).
-- **Capacity**: one integer "load unit" capacity `C` per vehicle trip; a site's load is the sum
-  of its five demands (D1). Service is all-or-nothing per site (0/1, D2) — no partial deliveries.
-- **Route**: a single open trip, depot → site → … → site, no return leg, no multiple trips (D3).
-- **Objective**: `J(S) = sum(effective_benefit) - lambda * L(S)`, where `effective_benefit =
-  expected_benefit * priority` (D10) and `L(S)` is the route length of set `S` visited in a
-  fixed canonical order `pi` (D5). `pi` is the pre-order DFS of the depot's shortest-path tree
-  (D9) — sites in the same branch stay consecutive, so a compact cluster is cheap to visit.
-  `lambda` is a fixed integer, calibrated once from the real dataset
-  (`median(effective_benefit) / median(distance from the depot)`, D11): **21** for `SEED = 1`.
-- Both Greedy and DP optimize this exact same `J(S)` (D4), so any gap between their results comes
-  only from the strategy, not from a different objective.
+- **Grafo**: 1 depósito (nó 0) + 20 sites candidatos, estradas com distância inteira, algumas
+  marcadas como indisponíveis. As distâncias entre dois nós quaisquer são distâncias de menor
+  caminho apenas sobre estradas *disponíveis*, calculadas pelo nosso próprio Dijkstra (D6).
+- **Capacidade**: uma capacidade `C` em "unidades de carga" inteiras por viagem do veículo; a
+  carga de um site é a soma das suas cinco demandas (D1). O atendimento é tudo-ou-nada por site
+  (0/1, D2) — sem entregas parciais.
+- **Rota**: uma única viagem aberta, depósito → site → … → site, sem volta, sem múltiplas
+  viagens (D3).
+- **Objetivo**: `J(S) = soma(effective_benefit) - lambda * L(S)`, onde `effective_benefit =
+  expected_benefit * priority` (D10) e `L(S)` é o comprimento da rota do conjunto `S` visitado
+  em uma ordem canônica fixa `pi` (D5). `pi` é a busca em profundidade pré-ordem (pre-order DFS)
+  da árvore de menor caminho a partir do depósito (D9) — sites do mesmo ramo ficam consecutivos,
+  então um cluster compacto fica barato de visitar. `lambda` é um inteiro fixo, calibrado uma
+  única vez a partir do dataset real (`mediana(effective_benefit) / mediana(distância até o
+  depósito)`, D11): **21** para `SEED = 1`.
+- Tanto o Greedy quanto o DP otimizam exatamente o mesmo `J(S)` (D4), então qualquer diferença
+  entre os resultados vem apenas da estratégia, não de um objetivo diferente.
 
-### 3 Data structures
+### 3 Estruturas de dados
 
-Justified by the operation each one makes cheap (Section 5.2 of `claude/SPEC.md`):
+Justificadas pela operação que cada uma torna barata (Seção 5.2 de `claude/SPEC.md`):
 
-| Structure | Used for | Why |
+| Estrutura | Usada para | Por quê |
 |---|---|---|
-| `dict[int, list[tuple[int, int]]]` (`Graph`) | adjacency list | O(1) access from a node to its neighbors |
-| `set` | occupied grid positions, blocked-road check, visited/eligible candidates | O(1) membership test |
-| `heapq` (binary heap) | Dijkstra's frontier | O(log n) extract-min |
-| `collections.deque` | BFS connectivity check while blocking roads | O(1) `popleft` |
-| `tuple` (frozen dataclasses) | `Site`, `Edge`, `Depot`, `Instance`, `Solution` | immutable value objects, safe to reuse/compare |
-| `list[list[float]]` | the DP table `dp[i][c]` | dense table: most `(site, load)` states are populated |
-| `dict[int, dict[int, float]]` | the all-pairs distance matrix | sparse-by-source access, one Dijkstra result per key |
+| `dict[int, list[tuple[int, int]]]` (`Graph`) | lista de adjacência | acesso O(1) de um nó aos seus vizinhos |
+| `set` | posições ocupadas na grade, checagem de estrada bloqueada, candidatos visitados/elegíveis | teste de pertencimento O(1) |
+| `heapq` (heap binária) | fronteira do Dijkstra | extract-min O(log n) |
+| `collections.deque` | checagem de conectividade (BFS) ao bloquear estradas | `popleft` O(1) |
+| `tuple` (dataclasses congeladas) | `Site`, `Edge`, `Depot`, `Instance`, `Solution` | objetos de valor imutáveis, seguros para reusar/comparar |
+| `list[list[float]]` | a tabela do DP `dp[i][c]` | tabela densa: a maioria dos estados `(site, carga)` é preenchida |
+| `dict[int, dict[int, float]]` | a matriz de distâncias entre todos os pares | acesso esparso por origem, um resultado de Dijkstra por chave |
 
-### 4 Algorithms
+### 4 Algoritmos
 
-- **Greedy** (`src/greedy.py`, D12): repeatedly serve the not-yet-chosen, capacity-fitting site
-  with the highest marginal-benefit density `delta_J_i(S) / load_i`; stop when no site has
-  positive marginal gain. Locally optimal for the *fractional* relaxation (an exchange argument:
-  swapping a chosen item for a lower-density one cannot improve the result), but the 0/1
-  restriction means leftover capacity after the best-density pick can be wasted — exactly where
-  it can lose to DP (Part D).
-- **Dynamic Programming** (`src/dynamic_programming.py`, Section 4): bottom-up DP over states
-  `dp[i][c]` = best `J` for a route ending at the `i`-th site of `pi` with load exactly `c`.
-  Base case `dp[i][w_i] = b_i - lambda * d(depot, site_i)`; recurrence considers every earlier
-  site `j < i` as the direct predecessor. Full state/decision/base-case/recurrence/reconstruction
-  explanation is in the module's docstring and in `docs/analise_complexidade.md`.
-- Both return the same `Solution` shape (D15: no `Strategy`/`ABC` — plain functions), so Part D
-  can compare them directly.
+- **Greedy** (`src/greedy.py`, D12): atende repetidamente o site ainda não escolhido, que cabe
+  na capacidade restante, com a maior densidade de benefício marginal `delta_J_i(S) / load_i`;
+  para quando nenhum site tem ganho marginal positivo. É localmente ótimo para o relaxamento
+  *fracionário* (um argumento de troca: trocar um item escolhido por outro de menor densidade
+  não pode melhorar o resultado), mas a restrição 0/1 faz com que a capacidade que sobra após a
+  melhor escolha por densidade possa ser desperdiçada — exatamente onde ele pode perder para o
+  DP (Parte D).
+- **Programação Dinâmica** (`src/dynamic_programming.py`, Seção 4): DP bottom-up sobre estados
+  `dp[i][c]` = melhor `J` para uma rota que termina no i-ésimo site de `pi` com carga
+  exatamente `c`. Caso base `dp[i][w_i] = b_i - lambda * d(depósito, site_i)`; a recorrência
+  considera todo site anterior `j < i` como predecessor direto. A explicação completa de
+  estado/decisão/caso base/recorrência/reconstrução está na docstring do módulo e em
+  `docs/analise_complexidade.md`.
+- Os dois retornam o mesmo formato `Solution` (D15: sem `Strategy`/`ABC` — funções simples), o
+  que permite que a Parte D os compare diretamente.
 
-### 5 How to run
+### 5 Como executar
 
 ```bash
-# 1. Create an environment with Python >= 3.10 and install dependencies
-python3 -m venv .venv   # or: uv venv --python 3.12 .venv
+# 1. Crie um ambiente com Python >= 3.10 e instale as dependências
+python3 -m venv .venv   # ou: uv venv --python 3.12 .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. (Re)generate the dataset from SEED = 1 (data/problema1.csv, problema1_edges.csv)
+# 2. (Re)gere o dataset a partir de SEED = 1 (data/problema1.csv, problema1_edges.csv)
 python -m src.data_generator
 
-# 3. Run the tests
+# 3. Rode os testes
 pytest -q
 
-# 4. Regenerate the figures (figures/questao1/*.png)
+# 4. Regenere as figuras (figures/questao1/*.png)
 python -m src.plots
 
-# 5. Run the notebook end to end
+# 5. Rode o notebook do início ao fim
 jupyter nbconvert --to notebook --execute notebooks/questao1.ipynb --output questao1.ipynb
 ```
 
-### 6 Results
+### 6 Resultados
 
-On the seed-1 dataset, default capacity `C = 581` (`floor(0.35 * 1662)`), `lambda = 21`:
+No dataset seed-1, capacidade padrão `C = 581` (`floor(0.35 * 1662)`), `lambda = 21`:
 
-| | Sites served | Total benefit | Total load | Route length | J(S) |
+| | Sites atendidos | Benefício total | Carga total | Comprimento da rota | J(S) |
 |---|---:|---:|---:|---:|---:|
 | Greedy | 8 | 15565 | 564 | 318 | **8887** |
-| DP (optimal) | 7 | 17439 | 580 | 274 | **11685** |
+| DP (ótimo) | 7 | 17439 | 580 | 274 | **11685** |
 
-DP strictly outperforms Greedy on the real dataset (gap = 2798): Greedy's density-first pick
-leaves capacity that DP fills with a better combination. A small hand-built counterexample
-(3 sites, capacity 10, `lambda = 1`) makes the failure exact and provable by hand: Greedy takes
-the single best-density site (`J = 59`) and then can't fit anything else, while DP takes the
-other two sites together (`J = 88`) — see `docs/analise_complexidade.md` and
-`tests/test_questao1.py` (`test_case_2_...`, `test_case_3_...`) for the full trace. The four
-figures (service network, DP service plan, DP evolution table, time-growth comparison) are in
-`figures/questao1/` and walked through in `notebooks/questao1.ipynb`.
+O DP supera estritamente o Greedy no dataset real (diferença = 2798): a escolha do Greedy por
+densidade deixa capacidade sobrando que o DP preenche com uma combinação melhor. Um contraexemplo
+pequeno, construído à mão (3 sites, capacidade 10, `lambda = 1`), torna a falha exata e
+demonstrável no papel: o Greedy escolhe o único site de maior densidade (`J = 59`) e depois não
+consegue encaixar mais nada, enquanto o DP escolhe os outros dois sites juntos (`J = 88`) — veja
+`docs/analise_complexidade.md` e `tests/test_questao1.py` (`test_case_2_...`,
+`test_case_3_...`) para o traço completo. As quatro figuras (rede de atendimento, plano de
+solução do DP, tabela de evolução do DP, comparação de crescimento de tempo) estão em
+`figures/questao1/` e são percorridas em `notebooks/questao1.ipynb`.
 
-### 7 Complexity
+### 7 Complexidade
 
-Full derivation in `docs/analise_complexidade.md`. Summary, in the problem's own parameters
-(`V = 21`, `E = 38` for seed 1, `N` = candidate sites, `C` = capacity):
+Derivação completa em `docs/analise_complexidade.md`. Resumo, nos próprios parâmetros do
+problema (`V = 21`, `E = 38` para seed 1, `N` = sites candidatos, `C` = capacidade):
 
-- **Greedy**: `O(N^3)` time (N rounds x N candidates x O(N) marginal-gain lookup), `O(N)` memory.
-- **DP**: `O(N^2 * C)` time (`N * (C+1)` states x up to `N` predecessors each), `O(N * C)`
-  memory — pseudo-polynomial in `C`. Unlike a classic 0/1 knapsack, this DP's recurrence lets
-  *any* earlier site (not just the immediately preceding one) be a direct predecessor, so it
-  cannot be reduced to an `O(C)` rolling vector even ignoring reconstruction.
-- Preprocessing (Dijkstra + the full distance matrix + `pi`) is `O(N * (V+E) log V)`, negligible
-  next to the DP at this scale (measured under a millisecond vs. ~5 ms for the DP itself).
+- **Greedy**: tempo `O(N^3)` (N rodadas x N candidatos x busca O(N) de ganho marginal),
+  memória `O(N)`.
+- **DP**: tempo `O(N^2 * C)` (`N * (C+1)` estados x até `N` predecessores cada), memória
+  `O(N * C)` — pseudo-polinomial em `C`. Diferente de uma mochila 0/1 clássica, a recorrência
+  deste DP permite que *qualquer* site anterior (não só o imediatamente anterior) seja
+  predecessor direto, então não pode ser reduzida a um vetor rolante `O(C)` mesmo ignorando a
+  reconstrução.
+- O pré-processamento (Dijkstra + a matriz de distâncias completa + `pi`) é `O(N * (V+E) log
+  V)`, desprezível perto do DP nessa escala (medido em menos de um milissegundo contra ~5 ms do
+  próprio DP).
 
-### 8 Limitations
+### 8 Limitações
 
-- **Single-resource capacity** (D1): a site's five separate demands are collapsed into one load
-  number, so the model cannot express "enough water but no blankets"; a true multi-resource
-  version would be a multidimensional knapsack.
-- **0/1 service** (D2): no partial deliveries, even though it is what makes the DP well-defined
-  and the Greedy failure mode possible.
-- **One vehicle, one open trip, no return** (D3): a simplification of real multi-trip routing
-  (VRP), which is NP-hard and out of scope here.
-- **Route-of-a-set convention** (D5): `J(S)` is computed with sites visited in the fixed order
-  `pi`; for a given set `S`, a better visiting order might exist. The DP is exact *for this `J`*,
-  not for the unconstrained best route of every possible `S`.
-- **`lambda` is fixed**, not re-calibrated if the dataset changes at run time (D11) — changing
-  weights live during the defense will not automatically re-tune it.
+- **Capacidade em um único recurso** (D1): as cinco demandas separadas de um site são
+  colapsadas em um único número de carga, então o modelo não consegue expressar "água
+  suficiente mas sem cobertores"; uma versão multi-recurso de verdade seria uma mochila
+  multidimensional.
+- **Atendimento 0/1** (D2): sem entregas parciais, embora seja exatamente isso que torna o DP
+  bem definido e o modo de falha do Greedy possível.
+- **Um veículo, uma viagem aberta, sem volta** (D3): uma simplificação de um roteamento real com
+  múltiplas viagens (VRP), que é NP-difícil e está fora do escopo aqui.
+- **Convenção de rota de um conjunto** (D5): `J(S)` é calculado com os sites visitados na ordem
+  fixa `pi`; para um dado conjunto `S`, pode existir uma ordem de visita melhor. O DP é exato
+  *para esse `J`*, não para a melhor rota irrestrita de cada `S` possível.
+- **`lambda` é fixo**, não é recalibrado se o dataset mudar durante a execução (D11) — mudar
+  pesos ao vivo durante a apresentação não o reajusta automaticamente.
 
-# Question 2 — Energy Consumption Management
+# Questão 2 — Gestão de Consumo de Energia
 
-Owner: Marco Aurélio
+Responsável: Marco Aurélio
 
-### 1 Problem
-
-_TODO_
-
-### 2 Adopted model
-
-_TODO_
-
-### 3 Data structures
+### 1 Problema
 
 _TODO_
 
-### 4 Algorithms
+### 2 Modelo adotado
 
 _TODO_
 
-### 5 How to run
+### 3 Estruturas de dados
 
 _TODO_
 
-### 6 Results
+### 4 Algoritmos
 
 _TODO_
 
-### 7 Complexity
+### 5 Como executar
 
 _TODO_
 
-### 8 Limitations
+### 6 Resultados
 
 _TODO_
 
-## Final question (max 300 words)
+### 7 Complexidade
 
-_TODO: paste the exact final-question prompt from the assignment
-(`Checkpoint_4_turma_W_21SET26`) here._
+_TODO_
+
+### 8 Limitações
+
+_TODO_
+
+## Pergunta final (máximo 300 palavras)
+
+_TODO: cole aqui o enunciado exato da pergunta final do enunciado
+(`Checkpoint_4_turma_W_21SET26`)._
 
 _TODO_
