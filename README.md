@@ -168,145 +168,149 @@ Responsável: Marco Aurélio
 
 ### 1 Problema
 
-A simplified power grid records hourly consumption readings from several regions
-(`timestamp`, `regiao`, `consumo`, `capacidade_disponivel`, `prioridade`, `custo`). The goal is
-to find the single **continuous** time interval with the highest accumulated **criticality** —
-the worst stretch of time the grid went through — using two different strategies (brute force
-and divide-and-conquer) and comparing them.
+Uma rede elétrica simplificada registra leituras horárias de consumo de várias regiões
+(`timestamp`, `regiao`, `consumo`, `capacidade_disponivel`, `prioridade`, `custo`). O objetivo é
+encontrar o único intervalo de tempo **contínuo** com a maior **criticidade** acumulada — o pior
+trecho de tempo pelo qual a rede passou — usando duas estratégias diferentes (força bruta e
+divisão e conquista) e comparando-as.
 
 ### 2 Modelo adotado
 
-- **Dataset** (`src/gerar_dataset.py`): 1,200 synthetic hourly readings (10 days x 5 regions),
-  documented and reproducible with `SEED = 1`.
-- **Injected critical event**: region Sul has its available capacity cut in half for a
-  continuous 30-hour window (simulating an outage/maintenance), while every region's capacity
-  is otherwise sized at 2x its base consumption so ordinary daily peaks stay safely under it.
-  Without a deliberate event like this, daily peaks repeat too evenly across all 10 days and the
-  "most critical interval" degenerates to almost the entire dataset (see Limitations).
-- **Criticality function** (`src/criticidade.py`):
-  `criticidade = consumo_relativo + penalidade_por_excesso`, where
-  `consumo_relativo = consumo - capacidade_disponivel * 0.75` (negative while a reading stays
-  under 75% of *its own* capacity, which normalizes the score across regions of very different
-  scale) and `penalidade_por_excesso = max(0, consumo - capacidade_disponivel) * 2.0 *
-  prioridade` (only nonzero once capacity is actually exceeded; priority multiplies the excess
-  instead of adding a flat bias, so a region only weighs more when it is genuinely overloaded).
-  This departs from the assignment's literal example (`consumo + penalidade + prioridade`)
-  because an always-nonnegative score makes the maximum-accumulated-interval search trivial.
+- **Dataset** (`src/gerar_dataset.py`): 1.200 leituras horárias sintéticas (10 dias x 5
+  regiões), documentado e reprodutível com `SEED = 1`.
+- **Evento crítico injetado**: a região Sul tem sua capacidade disponível reduzida pela metade
+  durante uma janela contínua de 30 horas (simulando uma interrupção/manutenção), enquanto a
+  capacidade de cada região é, do contrário, dimensionada em 2x seu consumo base, de modo que os
+  picos diários comuns fiquem com folga segura abaixo dela. Sem um evento deliberado como esse,
+  os picos diários se repetem de forma homogênea demais ao longo dos 10 dias e o "intervalo mais
+  crítico" degenera para quase o dataset inteiro (ver Limitações).
+- **Função de criticidade** (`src/criticidade.py`):
+  `criticidade = consumo_relativo + penalidade_por_excesso`, onde
+  `consumo_relativo = consumo - capacidade_disponivel * 0.75` (negativo enquanto uma leitura
+  fica abaixo de 75% de *sua própria* capacidade, o que normaliza a pontuação entre regiões de
+  escalas bem diferentes) e `penalidade_por_excesso = max(0, consumo - capacidade_disponivel) *
+  2.0 * prioridade` (só diferente de zero quando a capacidade é de fato excedida; a prioridade
+  multiplica o excesso em vez de somar um viés fixo, então uma região só pesa mais quando está
+  genuinamente sobrecarregada). Isso se afasta do exemplo literal do enunciado
+  (`consumo + penalidade + prioridade`) porque uma pontuação sempre não-negativa torna trivial a
+  busca do intervalo de máxima criticidade acumulada.
 
 ### 3 Estruturas de dados
 
-| Structure | Used for | Why |
+| Estrutura | Usada para | Por quê |
 |---|---|---|
-| `list[dict]` (`carregar_leituras`) | ordered readings, indexable by position | O(1) access by index / O(k) slicing — what both search algorithms use to select a continuous interval |
-| `set[str]` (`regioes_existentes`) | distinct region names | O(1) membership test vs. O(n) scan |
-| `dict[str, list[dict]]` (`agrupar_por_regiao`) | consumption by region | O(1) lookup by key vs. O(n) scan |
-| `dict[int, list[dict]]` (`agrupar_por_horario`) | consumption by hour of day | O(1) lookup by key, independent of region |
-| `dict[tuple[str, int], list[dict]]` (`agrupar_por_regiao_e_hora`) | consumption by region + hour | `tuple` as a hashable composite key — a `list` could not be used as a dict key |
-| `heapq.nlargest` (`maiores_picos_de_consumo`) | top-k consumption peaks | O(n log k) instead of sorting everything (O(n log n)) |
+| `list[dict]` (`carregar_leituras`) | leituras ordenadas, indexáveis por posição | acesso O(1) por índice / fatiamento O(k) — o que os dois algoritmos de busca usam para selecionar um intervalo contínuo |
+| `set[str]` (`regioes_existentes`) | nomes de regiões distintos | teste de pertencimento O(1) vs. varredura O(n) |
+| `dict[str, list[dict]]` (`agrupar_por_regiao`) | consumo por região | busca por chave O(1) vs. varredura O(n) |
+| `dict[int, list[dict]]` (`agrupar_por_horario`) | consumo por hora do dia | busca por chave O(1), independente da região |
+| `dict[tuple[str, int], list[dict]]` (`agrupar_por_regiao_e_hora`) | consumo por região + hora | `tuple` como chave composta hasheável — uma `list` não poderia ser usada como chave de dict |
+| `heapq.nlargest` (`maiores_picos_de_consumo`) | os k maiores picos de consumo | O(n log k) em vez de ordenar tudo (O(n log n)) |
 
 ### 4 Algoritmos
 
-- **Brute force** (`src/brute_force.py`): two nested loops explicitly test every `(start, end)`
-  pair — no shortcut, no library max-subarray function.
-- **Divide and conquer** (`src/divide_conquer.py`): the classic maximum-subarray recursion
-  adapted to criticality — base case (single reading), split the range in half, solve the left
-  half, solve the right half, solve the case that crosses the split
-  (`_melhor_intervalo_cruzando_o_meio`: two linear scans outward from the midpoint), then combine
-  (pick the best of the three candidates). `T(n) = 2T(n/2) + O(n) = O(n log n)` by the master
-  theorem.
-- Both call the same `calcular_criticidade` and always return the exact same interval (checked
-  by `tests/test_questao2.py` and side by side in `notebooks/questao2.ipynb`).
+- **Força bruta** (`src/brute_force.py`): dois loops aninhados testam explicitamente todo par
+  `(início, fim)` — sem atalho, sem função pronta de max-subarray.
+- **Divisão e conquista** (`src/divide_conquer.py`): a recursão clássica de max-subarray
+  adaptada para criticidade — caso base (uma única leitura), divide o intervalo ao meio, resolve
+  a metade esquerda, resolve a metade direita, resolve o caso que cruza o meio
+  (`_melhor_intervalo_cruzando_o_meio`: dois percursos lineares partindo do meio para fora),
+  depois combina (escolhe o melhor entre os três candidatos). `T(n) = 2T(n/2) + O(n) = O(n log
+  n)` pelo teorema mestre.
+- Os dois chamam a mesma `calcular_criticidade` e sempre retornam exatamente o mesmo intervalo
+  (verificado por `tests/test_questao2.py` e lado a lado em `notebooks/questao2.ipynb`).
 
 ### 5 Como executar
 
 ```bash
 pip install -r requirements.txt
 
-# regenerate the dataset (SEED = 1) -> data/problema2.csv
+# regenera o dataset (SEED = 1) -> data/problema2.csv
 python src/gerar_dataset.py
 
-# run either algorithm directly
+# roda qualquer um dos algoritmos diretamente
 python -m src.brute_force
 python -m src.divide_conquer
 
-# scalability experiment (n = 100..5000) -> data/escalabilidade.csv
+# experimento de escalabilidade (n = 100..5000) -> data/escalabilidade.csv
 python -m src.experimento_escalabilidade
 
-# regenerate the three figures -> figures/questao2/*.png
+# regenera as três figuras -> figures/questao2/*.png
 python -m src.grafico_serie_temporal
 python -m src.grafico_arvore_decomposicao
 python -m src.grafico_escalabilidade
 
-# tests
+# testes
 pytest tests/test_questao2.py -v
 
-# full notebook, end to end
+# notebook completo, do início ao fim
 jupyter nbconvert --to notebook --execute notebooks/questao2.ipynb --output questao2.ipynb
 ```
 
 ### 6 Resultados
 
-On the seed-1 dataset (1,200 readings), both algorithms find the exact same interval:
+No dataset seed-1 (1.200 leituras), os dois algoritmos encontram exatamente o mesmo intervalo:
 
-| | Interval (indices) | Period | Readings | Criticality |
+| | Intervalo (índices) | Período | Leituras | Criticidade |
 |---|---:|---|---:|---:|
-| Brute force | [571, 586] | 2025-06-05 18:00 to 21:00 | 16 | **1873.20** |
-| Divide and conquer | [571, 586] | 2025-06-05 18:00 to 21:00 | 16 | **1873.20** |
+| Força bruta | [571, 586] | 2025-06-05 18:00 às 21:00 | 16 | **1873,20** |
+| Divisão e conquista | [571, 586] | 2025-06-05 18:00 às 21:00 | 16 | **1873,20** |
 
-This matches exactly the injected critical event (region Sul, capacity cut in half).
-Scalability (`data/escalabilidade.csv`, each row one run at that `n`):
+Isso corresponde exatamente ao evento crítico injetado (região Sul, capacidade reduzida pela
+metade). Escalabilidade (`data/escalabilidade.csv`, cada linha uma execução naquele `n`):
 
-| n | Time — FB (s) | Time — DC (s) | Operations — FB | Operations — DC | Memory — FB (bytes) | Memory — DC (bytes) |
+| n | Tempo — FB (s) | Tempo — DC (s) | Operações — FB | Operações — DC | Memória — FB (bytes) | Memória — DC (bytes) |
 |---:|---:|---:|---:|---:|---:|---:|
-| 100 | 0.000246 | 0.000172 | 5,050 | 664 | 1,048 | 1,160 |
-| 250 | 0.001352 | 0.000392 | 31,375 | 1,991 | 5,928 | 6,064 |
-| 500 | 0.005839 | 0.000839 | 125,250 | 4,483 | 14,092 | 15,128 |
-| 1,000 | 0.024137 | 0.001806 | 500,500 | 9,966 | 31,539 | 32,048 |
-| 2,000 | 0.109495 | 0.003657 | 2,001,000 | 21,932 | 62,068 | 63,496 |
-| 5,000 | 0.604972 | 0.009821 | 12,502,500 | 61,439 | 160,596 | 161,504 |
+| 100 | 0,000246 | 0,000172 | 5.050 | 664 | 1.048 | 1.160 |
+| 250 | 0,001352 | 0,000392 | 31.375 | 1.991 | 5.928 | 6.064 |
+| 500 | 0,005839 | 0,000839 | 125.250 | 4.483 | 14.092 | 15.128 |
+| 1.000 | 0,024137 | 0,001806 | 500.500 | 9.966 | 31.539 | 32.048 |
+| 2.000 | 0,109495 | 0,003657 | 2.001.000 | 21.932 | 62.068 | 63.496 |
+| 5.000 | 0,604972 | 0,009821 | 12.502.500 | 61.439 | 160.596 | 161.504 |
 
-The most reliable comparison is `n = 1,000 -> 5,000` (5x): brute force gets **~25.1x** slower in
-time and its operation count grows **~25.0x** (500,500 -> 12,502,500) — matching `5^2 = 25`,
-i.e. `O(n^2)`. Divide-and-conquer gets only **~5.4x** slower in time and **~6.2x** in operation
-count (9,966 -> 61,439) — close to the `O(n log n)` prediction of
-`5 * log(5000)/log(1000) ~= 6.2x`, far below brute force's 25x. Memory grows **~5.0-5.1x** for
-*both* algorithms (matching `n` growing 5x), confirming the `O(n)` `scores` array — not the
-`O(log n)` recursion stack — dominates divide-and-conquer's memory too (Section 7). The wider
-`n = 100 -> 5,000` span (50x) points the same direction (brute force ~2,459x slower, DC ~57x),
-but with sub-millisecond timings at `n = 100` that ratio is noisier and is kept only as
-supporting context, not as the number the `O(n^2)`/`O(n log n)` claim rests on. Figures and full
-interpretation are in `figures/questao2/` and walked through in `notebooks/questao2.ipynb`.
+A comparação mais confiável é `n = 1.000 -> 5.000` (5x): a força bruta fica **~25,1x** mais
+lenta em tempo e sua contagem de operações cresce **~25,0x** (500.500 -> 12.502.500) — batendo
+com `5^2 = 25`, ou seja, `O(n^2)`. A divisão e conquista fica apenas **~5,4x** mais lenta em
+tempo e **~6,2x** em contagem de operações (9.966 -> 61.439) — perto da previsão `O(n log n)` de
+`5 * log(5000)/log(1000) ~= 6,2x`, bem abaixo dos 25x da força bruta. A memória cresce
+**~5,0-5,1x** para *ambos* os algoritmos (acompanhando o crescimento de 5x em `n`), confirmando
+que o array `scores`, O(n) — e não a pilha de recursão O(log n) — também domina a memória da
+divisão e conquista (Seção 7). O intervalo mais amplo `n = 100 -> 5.000` (50x) aponta na mesma
+direção (força bruta ~2.459x mais lenta, DC ~57x), mas com tempos sub-milissegundo em `n = 100`
+essa razão é mais ruidosa e é mantida só como contexto de apoio, não como o número em que a
+afirmação `O(n^2)`/`O(n log n)` se baseia. Figuras e interpretação completa estão em
+`figures/questao2/` e são percorridas em `notebooks/questao2.ipynb`.
 
 ### 7 Complexidade
 
-Full derivation in `docs/analise_complexidade.md`. Summary:
+Derivação completa em `docs/analise_complexidade.md`. Resumo:
 
-- **Brute force**: `T(n) = O(n^2)` (two nested loops over every interval pair), `S(n) = O(n)`
-  (the `scores` array).
-- **Divide and conquer**: `T(n) = O(n log n)` (`T(n) = 2T(n/2) + O(n)`, master theorem),
-  `S(n) = O(n)` (the `scores` array dominates the `O(log n)` recursion stack).
-- Growing from 1,000 to 1,000,000 readings: brute force projects to **~24,000s** (~6.8h,
-  infeasible); divide-and-conquer projects to **~3.4s** (still viable) — only divide-and-conquer
-  scales.
+- **Força bruta**: `T(n) = O(n^2)` (dois loops aninhados sobre todo par de intervalo),
+  `S(n) = O(n)` (o array `scores`).
+- **Divisão e conquista**: `T(n) = O(n log n)` (`T(n) = 2T(n/2) + O(n)`, teorema mestre),
+  `S(n) = O(n)` (o array `scores` domina a pilha de recursão `O(log n)`).
+- Crescendo de 1.000 para 1.000.000 de leituras: a força bruta projeta **~24.000s** (~6,8h,
+  inviável); a divisão e conquista projeta **~3,4s** (ainda viável) — só a divisão e conquista
+  escala.
 
 ### 8 Limitações
 
-- **Synthetic dataset, single injected event**: real utility data would likely show several,
-  possibly overlapping critical events across regions; this dataset injects only one, in one
-  region, to keep the demonstration legible.
-- **Criticality thresholds are our own choice, not regulatory**: `LIMIAR_SEGURO = 0.75` and
-  `FATOR_PENALIDADE_EXCESSO = 2.0` (`src/criticidade.py`) were picked to make the search
-  meaningful (avoid the degenerate "whole dataset" answer), not derived from a real grid
-  operator's safety standard.
-- **Region-interleaved sequence**: `carregar_leituras()` keeps the CSV's row order (five
-  regions per hour, in timestamp order); a "continuous interval" is contiguous in that list, not
-  on a single per-region time axis, so a found interval can span multiple regions within the
-  same hour block rather than only consecutive hours of one region.
-- **Memory measurement** (`tracemalloc`) only captures Python-level heap allocations, not
-  C-level buffers.
-- **Scalability experiment uses synthetic random readings**, not the real 1,200-row dataset,
-  because `n` goes up to 5,000 (above the dataset's size); timing is representative, but the
-  specific readings measured are not the real ones.
+- **Dataset sintético, evento único injetado**: dados reais de uma concessionária provavelmente
+  mostrariam vários eventos críticos, possivelmente sobrepostos entre regiões; este dataset
+  injeta apenas um, em uma região, para manter a demonstração legível.
+- **Limiares de criticidade são escolha nossa, não regulatória**: `LIMIAR_SEGURO = 0.75` e
+  `FATOR_PENALIDADE_EXCESSO = 2.0` (`src/criticidade.py`) foram escolhidos para tornar a busca
+  significativa (evitar a resposta degenerada de "o dataset inteiro"), não derivados do padrão
+  de segurança real de uma operadora de rede.
+- **Sequência intercalada por região**: `carregar_leituras()` mantém a ordem das linhas do CSV
+  (cinco regiões por hora, em ordem de timestamp); um "intervalo contínuo" é contíguo nessa
+  lista, não em um único eixo de tempo por região, então um intervalo encontrado pode abranger
+  várias regiões dentro do mesmo bloco de hora, em vez de apenas horas consecutivas de uma única
+  região.
+- **Medição de memória** (`tracemalloc`) captura apenas alocações no heap em nível Python, não
+  buffers em nível C.
+- **O experimento de escalabilidade usa leituras aleatórias sintéticas**, não o dataset real de
+  1.200 linhas, porque `n` chega a 5.000 (acima do tamanho do dataset); o tempo medido é
+  representativo, mas as leituras específicas medidas não são as reais.
 
 ## Pergunta final (máximo 300 palavras)
 
