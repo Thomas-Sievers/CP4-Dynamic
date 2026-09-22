@@ -16,8 +16,10 @@ reais: logística emergencial após eventos climáticos (Questão 1) e gestão d
 
 ## Reprodutibilidade
 
-`SEED = 1`. Desenvolvido e testado com Python 3.12 (as sequências de números aleatórios só têm
-reprodutibilidade garantida na mesma versão do Python).
+`SEED = 1` — identificador atribuído ao nosso grupo, usado como seed do gerador de números
+aleatórios nos dois datasets (`SEED = numero_do_grupo`). Desenvolvido e testado com Python 3.12
+(as sequências de números aleatórios só têm reprodutibilidade garantida na mesma versão do
+Python).
 
 # Questão 1 — Logística Emergencial
 
@@ -166,39 +168,172 @@ Responsável: Marco Aurélio
 
 ### 1 Problema
 
-_TODO_
+A simplified power grid records hourly consumption readings from several regions
+(`timestamp`, `regiao`, `consumo`, `capacidade_disponivel`, `prioridade`, `custo`). The goal is
+to find the single **continuous** time interval with the highest accumulated **criticality** —
+the worst stretch of time the grid went through — using two different strategies (brute force
+and divide-and-conquer) and comparing them.
 
 ### 2 Modelo adotado
 
-_TODO_
+- **Dataset** (`src/gerar_dataset.py`): 1,200 synthetic hourly readings (10 days x 5 regions),
+  documented and reproducible with `SEED = 1`.
+- **Injected critical event**: region Sul has its available capacity cut in half for a
+  continuous 30-hour window (simulating an outage/maintenance), while every region's capacity
+  is otherwise sized at 2x its base consumption so ordinary daily peaks stay safely under it.
+  Without a deliberate event like this, daily peaks repeat too evenly across all 10 days and the
+  "most critical interval" degenerates to almost the entire dataset (see Limitations).
+- **Criticality function** (`src/criticidade.py`):
+  `criticidade = consumo_relativo + penalidade_por_excesso`, where
+  `consumo_relativo = consumo - capacidade_disponivel * 0.75` (negative while a reading stays
+  under 75% of *its own* capacity, which normalizes the score across regions of very different
+  scale) and `penalidade_por_excesso = max(0, consumo - capacidade_disponivel) * 2.0 *
+  prioridade` (only nonzero once capacity is actually exceeded; priority multiplies the excess
+  instead of adding a flat bias, so a region only weighs more when it is genuinely overloaded).
+  This departs from the assignment's literal example (`consumo + penalidade + prioridade`)
+  because an always-nonnegative score makes the maximum-accumulated-interval search trivial.
 
 ### 3 Estruturas de dados
 
-_TODO_
+| Structure | Used for | Why |
+|---|---|---|
+| `list[dict]` (`carregar_leituras`) | ordered readings, indexable by position | O(1) access by index / O(k) slicing — what both search algorithms use to select a continuous interval |
+| `set[str]` (`regioes_existentes`) | distinct region names | O(1) membership test vs. O(n) scan |
+| `dict[str, list[dict]]` (`agrupar_por_regiao`) | consumption by region | O(1) lookup by key vs. O(n) scan |
+| `dict[int, list[dict]]` (`agrupar_por_horario`) | consumption by hour of day | O(1) lookup by key, independent of region |
+| `dict[tuple[str, int], list[dict]]` (`agrupar_por_regiao_e_hora`) | consumption by region + hour | `tuple` as a hashable composite key — a `list` could not be used as a dict key |
+| `heapq.nlargest` (`maiores_picos_de_consumo`) | top-k consumption peaks | O(n log k) instead of sorting everything (O(n log n)) |
 
 ### 4 Algoritmos
 
-_TODO_
+- **Brute force** (`src/brute_force.py`): two nested loops explicitly test every `(start, end)`
+  pair — no shortcut, no library max-subarray function.
+- **Divide and conquer** (`src/divide_conquer.py`): the classic maximum-subarray recursion
+  adapted to criticality — base case (single reading), split the range in half, solve the left
+  half, solve the right half, solve the case that crosses the split
+  (`_melhor_intervalo_cruzando_o_meio`: two linear scans outward from the midpoint), then combine
+  (pick the best of the three candidates). `T(n) = 2T(n/2) + O(n) = O(n log n)` by the master
+  theorem.
+- Both call the same `calcular_criticidade` and always return the exact same interval (checked
+  by `tests/test_questao2.py` and side by side in `notebooks/questao2.ipynb`).
 
 ### 5 Como executar
 
-_TODO_
+```bash
+pip install -r requirements.txt
+
+# regenerate the dataset (SEED = 1) -> data/problema2.csv
+python src/gerar_dataset.py
+
+# run either algorithm directly
+python -m src.brute_force
+python -m src.divide_conquer
+
+# scalability experiment (n = 100..5000) -> data/escalabilidade.csv
+python -m src.experimento_escalabilidade
+
+# regenerate the three figures -> figures/questao2/*.png
+python -m src.grafico_serie_temporal
+python -m src.grafico_arvore_decomposicao
+python -m src.grafico_escalabilidade
+
+# tests
+pytest tests/test_questao2.py -v
+
+# full notebook, end to end
+jupyter nbconvert --to notebook --execute notebooks/questao2.ipynb --output questao2.ipynb
+```
 
 ### 6 Resultados
 
-_TODO_
+On the seed-1 dataset (1,200 readings), both algorithms find the exact same interval:
+
+| | Interval (indices) | Period | Readings | Criticality |
+|---|---:|---|---:|---:|
+| Brute force | [571, 586] | 2025-06-05 18:00 to 21:00 | 16 | **1873.20** |
+| Divide and conquer | [571, 586] | 2025-06-05 18:00 to 21:00 | 16 | **1873.20** |
+
+This matches exactly the injected critical event (region Sul, capacity cut in half).
+Scalability (`data/escalabilidade.csv`, each row one run at that `n`):
+
+| n | Time — FB (s) | Time — DC (s) | Operations — FB | Operations — DC | Memory — FB (bytes) | Memory — DC (bytes) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 0.000246 | 0.000172 | 5,050 | 664 | 1,048 | 1,160 |
+| 250 | 0.001352 | 0.000392 | 31,375 | 1,991 | 5,928 | 6,064 |
+| 500 | 0.005839 | 0.000839 | 125,250 | 4,483 | 14,092 | 15,128 |
+| 1,000 | 0.024137 | 0.001806 | 500,500 | 9,966 | 31,539 | 32,048 |
+| 2,000 | 0.109495 | 0.003657 | 2,001,000 | 21,932 | 62,068 | 63,496 |
+| 5,000 | 0.604972 | 0.009821 | 12,502,500 | 61,439 | 160,596 | 161,504 |
+
+The most reliable comparison is `n = 1,000 -> 5,000` (5x): brute force gets **~25.1x** slower in
+time and its operation count grows **~25.0x** (500,500 -> 12,502,500) — matching `5^2 = 25`,
+i.e. `O(n^2)`. Divide-and-conquer gets only **~5.4x** slower in time and **~6.2x** in operation
+count (9,966 -> 61,439) — close to the `O(n log n)` prediction of
+`5 * log(5000)/log(1000) ~= 6.2x`, far below brute force's 25x. Memory grows **~5.0-5.1x** for
+*both* algorithms (matching `n` growing 5x), confirming the `O(n)` `scores` array — not the
+`O(log n)` recursion stack — dominates divide-and-conquer's memory too (Section 7). The wider
+`n = 100 -> 5,000` span (50x) points the same direction (brute force ~2,459x slower, DC ~57x),
+but with sub-millisecond timings at `n = 100` that ratio is noisier and is kept only as
+supporting context, not as the number the `O(n^2)`/`O(n log n)` claim rests on. Figures and full
+interpretation are in `figures/questao2/` and walked through in `notebooks/questao2.ipynb`.
 
 ### 7 Complexidade
 
-_TODO_
+Full derivation in `docs/analise_complexidade.md`. Summary:
+
+- **Brute force**: `T(n) = O(n^2)` (two nested loops over every interval pair), `S(n) = O(n)`
+  (the `scores` array).
+- **Divide and conquer**: `T(n) = O(n log n)` (`T(n) = 2T(n/2) + O(n)`, master theorem),
+  `S(n) = O(n)` (the `scores` array dominates the `O(log n)` recursion stack).
+- Growing from 1,000 to 1,000,000 readings: brute force projects to **~24,000s** (~6.8h,
+  infeasible); divide-and-conquer projects to **~3.4s** (still viable) — only divide-and-conquer
+  scales.
 
 ### 8 Limitações
 
-_TODO_
+- **Synthetic dataset, single injected event**: real utility data would likely show several,
+  possibly overlapping critical events across regions; this dataset injects only one, in one
+  region, to keep the demonstration legible.
+- **Criticality thresholds are our own choice, not regulatory**: `LIMIAR_SEGURO = 0.75` and
+  `FATOR_PENALIDADE_EXCESSO = 2.0` (`src/criticidade.py`) were picked to make the search
+  meaningful (avoid the degenerate "whole dataset" answer), not derived from a real grid
+  operator's safety standard.
+- **Region-interleaved sequence**: `carregar_leituras()` keeps the CSV's row order (five
+  regions per hour, in timestamp order); a "continuous interval" is contiguous in that list, not
+  on a single per-region time axis, so a found interval can span multiple regions within the
+  same hour block rather than only consecutive hours of one region.
+- **Memory measurement** (`tracemalloc`) only captures Python-level heap allocations, not
+  C-level buffers.
+- **Scalability experiment uses synthetic random readings**, not the real 1,200-row dataset,
+  because `n` goes up to 5,000 (above the dataset's size); timing is representative, but the
+  specific readings measured are not the real ones.
 
 ## Pergunta final (máximo 300 palavras)
 
-_TODO: cole aqui o enunciado exato da pergunta final do enunciado
-(`Checkpoint_4_turma_W_21SET26`)._
+_Qual foi a decisão algorítmica mais importante tomada pelo grupo? Apresente uma alternativa que
+vocês descartaram e explique, considerando tempo, memória e qualidade da solução, por que a
+abordagem escolhida foi considerada mais adequada._
 
-_TODO_
+A decisão mais importante foi a forma da recorrência da DP da Questão 1: em vez da mochila 0/1
+clássica (`dp[i][c] = max(dp[i-1][c], dp[i-1][c-w_i] + b_i)`, onde o predecessor de cada item é
+sempre a linha `i-1`), permitimos que **qualquer** site anterior `j < i` na ordem canônica `pi`
+seja o predecessor direto de `i` (`src/dynamic_programming.py`, Seção 4 do README).
+
+A alternativa descartada — a mochila clássica — seria mais barata: `O(N*C)` em tempo, contra o
+`O(N^2*C)` da versão escolhida (Seção 7), e poderia até ser reduzida a um vetor rolante `O(C)`
+de memória. Descartamos porque ela é **incorreta** para o nosso `J(S)`: como o benefício
+depende do comprimento da rota `L(S)`, que soma distâncias entre sites *efetivamente visitados*
+em sequência, a transição "pular o site `i-1`" da mochila clássica perde a informação de qual
+foi o último site realmente visitado — e é exatamente isso que a distância do próximo trecho
+precisa. Isso não é hipotético: a solução ótima real atende só 7 dos 20 sites candidatos
+(Seção 6), ou seja, a maioria das transições da rota "pula" vários sites da ordem `pi`, e a
+mochila clássica computaria uma `L(S)` errada nesses casos.
+
+Em tempo, a diferença é irrelevante na prática (a DP inteira mede ~5ms para N=20, Seção 7); em
+memória, ambas as versões precisam guardar a tabela completa para permitir a reconstrução
+(Parte C), então não há perda real de memória ao escolher a recorrência mais cara. A única
+dimensão em que a alternativa descartada realmente vencia — tempo assintótico — não compensava
+o custo em qualidade da solução: preferimos uma resposta comprovadamente ótima a uma resposta
+rápida e errada. É também essa recorrência mais expressiva que produz o contraexemplo real do
+grupo (Seção 6): Greedy erra por 2.798 em `J(S)` justamente porque, ao contrário da DP, não
+enxerga essa dependência entre sites não-adjacentes na rota.
