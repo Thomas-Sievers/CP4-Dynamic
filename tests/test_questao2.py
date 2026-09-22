@@ -16,6 +16,7 @@ from src.brute_force import buscar_intervalo_critico_forca_bruta
 from src.criticidade import calcular_criticidade
 from src.divide_conquer import buscar_intervalo_critico_divide_conquer
 from src.estruturas import (
+    agrupar_por_horario,
     agrupar_por_regiao,
     agrupar_por_regiao_e_hora,
     carregar_leituras,
@@ -83,6 +84,11 @@ class TestEstruturas:
         agrupado = agrupar_por_regiao(self._leituras_de_exemplo())
         assert len(agrupado["Norte"]) == 2
         assert len(agrupado["Sul"]) == 1
+
+    def test_agrupar_por_horario(self):
+        agrupado = agrupar_por_horario(self._leituras_de_exemplo())
+        assert {l["regiao"] for l in agrupado[0]} == {"Norte", "Sul"}
+        assert len(agrupado[1]) == 1
 
     def test_agrupar_por_regiao_e_hora(self):
         agrupado = agrupar_por_regiao_e_hora(self._leituras_de_exemplo())

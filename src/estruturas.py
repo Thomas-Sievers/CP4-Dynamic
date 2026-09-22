@@ -65,6 +65,21 @@ def agrupar_por_regiao(leituras: list[dict]) -> dict[str, list[dict]]:
     return agrupado
 
 
+def agrupar_por_horario(leituras: list[dict]) -> dict[int, list[dict]]:
+    """
+    DICT hora_do_dia -> lista de leituras naquela hora, juntando todas
+    as regioes. Mesma vantagem de agrupar_por_regiao: consumo por
+    horario vira uma busca por chave O(1) (ex.: agrupado[18] pra ver
+    tudo que aconteceu as 18h em qualquer dia/regiao), em vez de
+    percorrer as leituras inteiras toda consulta.
+    """
+    agrupado: dict[int, list[dict]] = {}
+    for leitura in leituras:
+        hora_do_dia = int(leitura["timestamp"][11:13])
+        agrupado.setdefault(hora_do_dia, []).append(leitura)
+    return agrupado
+
+
 def agrupar_por_regiao_e_hora(leituras: list[dict]) -> dict[tuple[str, int], list[dict]]:
     """
     DICT com chave TUPLE (regiao, hora_do_dia). Pra virar chave de
